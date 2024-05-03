@@ -11,6 +11,7 @@ partition_data(clean_df)
 
 # Regression Tasks - function calls to run
 correlation_check(clean_df)
+bivariate_model(clean_df)
 
 # clean the dataset of any unnecessary columns and fix data types
 clean_data <- function(orig_df) {
@@ -26,24 +27,29 @@ clean_data <- function(orig_df) {
   for (i in 1:nrow(clean_df)) {
     # loop through columns
     for (j in 1:ncol(clean_df)) {
-      # Check if value is Nan and if so, save row for later deletion
+      # check if value is Nan and if so, save row for later deletion
       if (is.na(clean_df[i, j]) || clean_df[i, j] == "Nan") {
         rowsToRemove <- c(rowsToRemove, i)
         break  # Nan was found so don't check row any further
       }
     }
   }
-  # Remove rows with Nan values
+  # remove rows with Nan values
   clean_df <- clean_df[-rowsToRemove, ]
 
-  numericColumnNames <- c("attendance", "Goals.Home", "home_possessions", "home_shots")
+  # convert commas to periods to convert attendance from string to numeric data type
+  clean_df$attendance <- gsub(",", ".", clean_df$attendance)
+
+  # vector containing all columns to be converted to numeric
+  numericColumnNames <- c("attendance", "Goals.Home","Away.Goals", "home_possessions",
+                          "away_possessions", "home_shots", "away_shots", "home_on", "away_on",
+                          "home_chances", "away_chances", "home_corners", "away_corners",
+                          "home_yellow", "away_yellow", "home_red", "away_red")
+
   # ensure all numeric columns are of numeric type
   for (column in numericColumnNames) {
     clean_df[[column]] <- as.numeric(clean_df[[column]])
   }
-  #clean_df$attendance <- as.numeric(clean_df$attendance)
-  #clean_df$Goals.Home <- as.numeric(clean_df$Goals.Home)
-  #clean_df$home_possessions <- as.numeric(clean_df$home_possessions)
 
   # "Home.Team" Change team names to numeric type so can use for correlation matrix
 
@@ -80,9 +86,14 @@ partition_data <- function(clean_df) {
   write.csv(testingData, "testing_data.csv", row.names = FALSE)
 }
 
+# correlation matrix to verify at least one moderate to strong relationship
 correlation_check <- function(clean_df) {
 
   correlation_matrix <- cor(clean_df[, c("attendance", "Goals.Home", "home_possessions", "home_shots")])
 
   print(correlation_matrix)
+}
+
+bivariate_model <- function(clean_df){
+
 }
