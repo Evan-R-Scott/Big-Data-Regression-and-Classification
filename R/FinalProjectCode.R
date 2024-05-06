@@ -1,3 +1,6 @@
+library(caret)
+library(dplyr)
+library(glmnet)
 
 # load original, unmodified dataset
 orig_df <- read.csv("Premier_League.csv")
@@ -5,16 +8,26 @@ orig_df <- read.csv("Premier_League.csv")
 # set seed for reproducibility
 set.seed(69)
 
+#--------------------------------------------------
+# FUNCTION CALLS TO RUN FOR PROJECT AFTER ALL FUNCTIONS HAVE BEEN LOADED IN ENVIRONMENT
+
 # function calls to run for initial setup
-clean_df <- clean_data(orig_df)
-partition_data(clean_df)
+clean_df <- clean_data()
+partition_data()
+
+training_data <- read.csv("training_data.csv")
+testing_data <- read.csv("testing_data.csv")
+validation_data <- read.csv("validation_data.csv")
 
 # Regression Tasks - function calls to run
-correlation_check(clean_df)
-bivariate_model(clean_df)
+correlation_check()
+linear_model()
+bivariate_model()
+regularize_model()
+#--------------------------------------------------
 
 # clean the dataset of any unnecessary columns and fix data types
-clean_data <- function(orig_df) {
+clean_data <- function() {
 
   clean_df <- subset(orig_df, select= -c(home_blocked, away_blocked, home_pass, away_pass,
                                          home_off, away_off, home_offside, away_offside,
@@ -51,13 +64,24 @@ clean_data <- function(orig_df) {
     clean_df[[column]] <- as.numeric(clean_df[[column]])
   }
 
-  # "Home.Team" Change team names to numeric type so can use for correlation matrix
+  # converts home and away team names to numeric types based on table standings for correlation test
+  standings <- data.frame(
+    Team = c("Manchester City", "Arsenal", "Manchester United", "Newcastle United", "Liverpool",
+             "Brighton and Hove Albion", "Aston Villa", "Tottenham Hotspur", "Brentford", "Fulham", "Crystal Palace",
+             "Chelsea", "Wolverhampton Wanderers", "West Ham United", "Bournemouth", "Nottingham Forest", "Everton",
+             "Leicester City", "Leeds United", "Southampton"),
+    Position = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
+  )
+  team_position_map <- setNames(standings$Position, standings$Team)
+
+  clean_df$numHome.Team <- ifelse(clean_df$Home.Team %in% names(team_position_map), team_position_map[clean_df$Home.Team], NA)
+  clean_df$numAway.Team <- ifelse(clean_df$Away.Team %in% names(team_position_map), team_position_map[clean_df$Away.Team], NA)
 
   return (clean_df)
 }
 
 # partition the dataset into 3 sets: training partition and 2 holdout partitions (validation and testing)
-partition_data <- function(clean_df) {
+partition_data <- function() {
 
   # get total number of data/rows
   totalRows <- nrow(clean_df)
@@ -87,13 +111,65 @@ partition_data <- function(clean_df) {
 }
 
 # correlation matrix to verify at least one moderate to strong relationship
-correlation_check <- function(clean_df) {
+correlation_check <- function() {
 
-  correlation_matrix <- cor(clean_df[, c("attendance", "Goals.Home", "home_possessions", "home_shots")])
+  correlation_matrix <- cor(clean_df[, c("attendance", "numAway.Team", "numHome.Team", "Goals.Home", "home_possessions", "home_shots")])
 
   print(correlation_matrix)
 }
 
-bivariate_model <- function(clean_df){
+# helper function for calculating error metrics (MAE, RMSE, R^2)
+calculate_error_metrics <- function(model){
 
+  # Predict on the training data
+  train_predictions <- predict(model, newdata = training_data)
+
+  # Calculate in-sample error metrics
+  train_mae <- mean(abs(train_predictions - training_data$attendance))
+  train_rmse <- sqrt(mean((train_predictions - training_data$attendance)^2))
+  train_r_squared <- cor(train_predictions, training_data$attendance)^2
+
+  # Predict on the validation data
+  validation_predictions <- predict(model, newdata = validation_data)
+
+  # Calculate out-of-sample error metrics
+  validation_mae <- mean(abs(validation_predictions - validation_data$attendance))
+  validation_rmse <- sqrt(mean((validation_predictions - validation_data$attendance)^2))
+  validation_r_squared <- cor(validation_predictions, validation_data$attendance)^2
+
+  # display metric results
+  cat("In-sample MAE:", train_mae, "\n")
+  cat("In-sample RMSE:", train_rmse, "\n")
+  cat("In-sample R-squared:", train_r_squared, "\n")
+  cat("\n")
+  cat("Out-of-sample MAE:", validation_mae, "\n")
+  cat("Out-of-sample RMSE:", validation_rmse, "\n")
+  cat("Out-of-sample R-squared:", validation_r_squared, "\n")
 }
+
+# simple linear model with no transformations
+linear_model <- function(){
+
+  simpleLM <- lm(attendance ~ numHome.Team, data = training_data)
+  print(summary(simpleLM))
+
+  print("Linear Model Performance - Error Metrics:")
+  calculate_error_metrics(simpleLM)
+}
+
+# bivariate model with polynomial/quadratic transformation
+bivariate_model <- function() {
+  bivarModel <- lm(attendance ~ numHome.Team + I(numHome.Team^2), data = training_data)
+  print(summary(bivarModel))
+
+  print("Bivariate Model Performance - Error Metrics:")
+  calculate_error_metrics(bivarModel)
+}
+
+regularize_model <- function() {
+
+  # create quadratic features for required data
+  training_data$numHomeTeamSquared <- training_data$numHome.Team^2
+  validation_data$NumHomeTeamSquared <- validation_data$numHome.Team^2
+}
+#-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
