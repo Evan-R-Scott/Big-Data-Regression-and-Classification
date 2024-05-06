@@ -11,10 +11,11 @@ set.seed(69)
 #--------------------------------------------------
 # FUNCTION CALLS TO RUN FOR PROJECT AFTER ALL FUNCTIONS HAVE BEEN LOADED IN ENVIRONMENT
 
-# function calls to run for initial setup
+# function calls to run for initial setup for both regression and classification tasks
 clean_df <- clean_data()
 partition_data()
 
+# load partitioned data files for further use
 training_data <- read.csv("training_data.csv")
 testing_data <- read.csv("testing_data.csv")
 validation_data <- read.csv("validation_data.csv")
@@ -110,6 +111,8 @@ partition_data <- function() {
   write.csv(testingData, "testing_data.csv", row.names = FALSE)
 }
 
+#--------------- Regression Tasks Below ---------------
+
 # correlation matrix to verify at least one moderate to strong relationship
 correlation_check <- function() {
 
@@ -122,29 +125,29 @@ correlation_check <- function() {
 calculate_error_metrics <- function(model){
 
   # Predict on the training data
-  train_predictions <- predict(model, newdata = training_data)
+  traingPrediction <- predict(model, newdata = training_data)
 
   # Calculate in-sample error metrics
-  train_mae <- mean(abs(train_predictions - training_data$attendance))
-  train_rmse <- sqrt(mean((train_predictions - training_data$attendance)^2))
-  train_r_squared <- cor(train_predictions, training_data$attendance)^2
+  trainMAE <- mean(abs(traingPrediction - training_data$attendance))
+  trainRMSE <- sqrt(mean((traingPrediction - training_data$attendance)^2))
+  traingRSQUARED <- cor(traingPrediction, training_data$attendance)^2
 
   # Predict on the validation data
-  validation_predictions <- predict(model, newdata = validation_data)
+  validationPrediction <- predict(model, newdata = validation_data)
 
   # Calculate out-of-sample error metrics
-  validation_mae <- mean(abs(validation_predictions - validation_data$attendance))
-  validation_rmse <- sqrt(mean((validation_predictions - validation_data$attendance)^2))
-  validation_r_squared <- cor(validation_predictions, validation_data$attendance)^2
+  validationMAE <- mean(abs(validationPrediction - validation_data$attendance))
+  validationRMSE <- sqrt(mean((validationPrediction - validation_data$attendance)^2))
+  validationRSQUARED <- cor(validationPrediction, validation_data$attendance)^2
 
   # display metric results
-  cat("In-sample MAE:", train_mae, "\n")
-  cat("In-sample RMSE:", train_rmse, "\n")
-  cat("In-sample R-squared:", train_r_squared, "\n")
+  cat("In-sample MAE:", trainMAE, "\n")
+  cat("In-sample RMSE:", trainRMSE, "\n")
+  cat("In-sample R-squared:", traingRSQUARED, "\n")
   cat("\n")
-  cat("Out-of-sample MAE:", validation_mae, "\n")
-  cat("Out-of-sample RMSE:", validation_rmse, "\n")
-  cat("Out-of-sample R-squared:", validation_r_squared, "\n")
+  cat("Out-of-sample MAE:", validationMAE, "\n")
+  cat("Out-of-sample RMSE:", validationRMSE, "\n")
+  cat("Out-of-sample R-squared:", validationRSQUARED, "\n")
 }
 
 # simple linear model with no transformations
@@ -170,6 +173,45 @@ regularize_model <- function() {
 
   # create quadratic features for required data
   training_data$numHomeTeamSquared <- training_data$numHome.Team^2
-  validation_data$NumHomeTeamSquared <- validation_data$numHome.Team^2
+  validation_data$numHomeTeamSquared <- validation_data$numHome.Team^2
+  write.csv(training_data, "training_data.csv", row.names = FALSE)
+  write.csv(validation_data, "validation_data.csv", row.names = FALSE)
+  training_data <- read.csv("training_data.csv")
+  validation_data <- read.csv("validation_data.csv")
+
+  xTrain <- as.matrix(training_data[, c("numHome.Team", "numHomeTeamSquared")])
+  yTrain <- training_data$attendance
+  xValidation <- as.matrix(validation_data[, c("numHome.Team", "numHomeTeamSquared")])
+  yValidation <- validation_data$attendance
+
+  ridgeCV <- cv.glmnet(xTrain, yTrain, alpha = 0)
+
+  optimalLambda <- ridgeCV$lambda.min
+
+  ridgeModel <- glmnet(xTrain, yTrain, alpha = 0, lambda = optimalLambda)
+
+  ridgeValidationPredictions <- predict(ridgeModel, newx = xValidation)
+
+  ridgeValidationMAE <- mean(abs(ridgeValidationPredictions - yValidation))
+  ridgeValidationRMSE <- sqrt(mean((ridgeValidationPredictions - yValidation)^2))
+  ridgeValidationRSQUARED <- cor(ridgeValidationPredictions, yValidation)^2
+
+  cat("Regularize Model Performance - Error Metrics:\n")
+  cat("Optimal Lambda:", optimalLambda, "\n")
+  cat("Out-of-sample MAE:", ridgeValidationMAE, "\n")
+  cat("Out-of-sample RMSE:", ridgeValidationRMSE, "\n")
+  cat("Out-of-sample R-squared:", ridgeValidationRSQUARED, "\n")
 }
-#-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+GAS_model <- function() {
+
+}
+
+bivariate_plot <- function() {
+
+}
+
+performance_table <- function() {
+
+}
+#--------------- Classification Tasks Below ---------------
