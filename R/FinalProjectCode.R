@@ -1,6 +1,8 @@
 library(caret)
 library(dplyr)
 library(glmnet)
+library(mgcv)
+library(ggplot2)
 
 # load original, unmodified dataset
 orig_df <- read.csv("Premier_League.csv")
@@ -25,15 +27,17 @@ correlation_check()
 linear_model()
 bivariate_model()
 regularize_model()
+spline_model()
 #--------------------------------------------------
 
 # clean the dataset of any unnecessary columns and fix data types
 clean_data <- function() {
 
-  clean_df <- subset(orig_df, select= -c(home_blocked, away_blocked, home_pass, away_pass,
+  clean_df <- subset(orig_df, select= -c(date, clock, stadium, home_blocked, away_blocked, home_pass, away_pass,
                                          home_off, away_off, home_offside, away_offside,
                                          home_tackles, away_tackles, home_duels, away_duels,
-                                         home_saves, away_saves, home_fouls, away_fouls, links))
+                                         home_saves, away_saves, home_fouls, away_fouls, home_yellow,
+                                         away_yellow, home_red, away_red, links))
 
   # remove rows with Nan values (na.omit was not recognizing null values in dataset so solved this way)
   rowsToRemove <- c()
@@ -57,8 +61,7 @@ clean_data <- function() {
   # vector containing all columns to be converted to numeric
   numericColumnNames <- c("attendance", "Goals.Home","Away.Goals", "home_possessions",
                           "away_possessions", "home_shots", "away_shots", "home_on", "away_on",
-                          "home_chances", "away_chances", "home_corners", "away_corners",
-                          "home_yellow", "away_yellow", "home_red", "away_red")
+                          "home_chances", "away_chances", "home_corners", "away_corners")
 
   # ensure all numeric columns are of numeric type
   for (column in numericColumnNames) {
@@ -203,8 +206,13 @@ regularize_model <- function() {
   cat("Out-of-sample R-squared:", ridgeValidationRSQUARED, "\n")
 }
 
-GAS_model <- function() {
+spline_model <- function() {
+  splineModel <- gam(attendance ~ s(numHome.Team), family = gaussian(), data = training_data)
+  print(summary(splineModel))
 
+  cat("\n")
+  print("Spline Model Performance - Error Metrics:")
+  calculate_error_metrics(splineModel)
 }
 
 bivariate_plot <- function() {
