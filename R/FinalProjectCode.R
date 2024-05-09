@@ -1,3 +1,4 @@
+# setup
 library(caret)
 library(dplyr)
 library(glmnet)
@@ -23,11 +24,22 @@ testing_data <- read.csv("testing_data.csv")
 validation_data <- read.csv("validation_data.csv")
 
 # Regression Tasks - function calls to run
+# unlist from list to vector
 correlation_check()
-linear_model()
-bivariate_model()
-regularize_model()
-spline_model()
+linearResult <- linear_model(); linearModel <- linearResult[1]; linearTrainingPred <- unlist(linearResult[2]); linearValidationPred <- unlist(linearResult[3]); linearTrainingRMSE <- unlist(linearResult[4]); linearValidationRMSE <- unlist(linearResult[5])
+bivariateResult <- bivariate_model(); bivariateModel<- bivariateResult[1]; bivariateTrainingPred <- unlist(bivariateResult[2]); bivariateValidationPred <- unlist(bivariateResult[3]); bivariateTrainingRMSE <- unlist(bivariateResult[4]); bivariateValidationRMSE <- unlist(bivariateResult[5])
+ridgeResult <- regularize_model(); ridgeModel <- ridgeResult[1]; ridgeTrainingPred <- unlist(ridgeResult[2]); ridgeValidationPred <- unlist(ridgeResult[3]); ridgeTrainingRMSE <- unlist(ridgeResult[4]); ridgeValidationRMSE <- unlist(ridgeResult[5])
+splineResult <- spline_model(); splineModel <- splineResult[1]; splineTrainingPred <- unlist(splineResult[2]); splineValidationPred <- unlist(splineResult[3]); splineTrainingRMSE <- unlist(splineResult[4]); splineValidationRMSE <- unlist(splineResult[5])
+bivariate_plot(linearTrainingPred, linearValidationPred, bivariateTrainingPred,
+               bivariateValidationPred, ridgeTrainingPred, ridgeValidationPred,
+               splineTrainingPred, splineValidationPred, training_data, validation_data)
+best_model <- performance_table(linearTrainingRMSE, linearValidationRMSE,
+                  bivariateTrainingRMSE, bivariateValidationRMSE,
+                  ridgeTrainingRMSE,  ridgeValidationRMSE,
+                  splineTrainingRMSE, splineValidationRMSE,
+                  linearModel, bivariateModel, ridgeModel, splineModel)
+final_model_uncontaminated(best_model)
+
 #--------------------------------------------------
 
 # clean the dataset of any unnecessary columns and fix data types
@@ -56,7 +68,7 @@ clean_data <- function() {
   clean_df <- clean_df[-rowsToRemove, ]
 
   # convert commas to periods to convert attendance from string to numeric data type
-  clean_df$attendance <- gsub(",", ".", clean_df$attendance)
+  clean_df$attendance <- gsub(",", "", clean_df$attendance)
 
   # vector containing all columns to be converted to numeric
   numericColumnNames <- c("attendance", "Goals.Home","Away.Goals", "home_possessions",
@@ -76,8 +88,10 @@ clean_data <- function() {
              "Leicester City", "Leeds United", "Southampton"),
     Position = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
   )
+  # map team to the position they placed in 22/23 Premier League season
   team_position_map <- setNames(standings$Position, standings$Team)
 
+  # add columns associating numbers with teams to dataframe
   clean_df$numHome.Team <- ifelse(clean_df$Home.Team %in% names(team_position_map), team_position_map[clean_df$Home.Team], NA)
   clean_df$numAway.Team <- ifelse(clean_df$Away.Team %in% names(team_position_map), team_position_map[clean_df$Away.Team], NA)
 
@@ -128,12 +142,12 @@ correlation_check <- function() {
 calculate_error_metrics <- function(model){
 
   # Predict on the training data
-  traingPrediction <- predict(model, newdata = training_data)
+  trainingPrediction <- predict(model, newdata = training_data)
 
   # Calculate in-sample error metrics
-  trainMAE <- mean(abs(traingPrediction - training_data$attendance))
-  trainRMSE <- sqrt(mean((traingPrediction - training_data$attendance)^2))
-  traingRSQUARED <- cor(traingPrediction, training_data$attendance)^2
+  trainMAE <- mean(abs(trainingPrediction - training_data$attendance))
+  trainRMSE <- sqrt(mean((trainingPrediction - training_data$attendance)^2))
+  traingRSQUARED <- cor(trainingPrediction, training_data$attendance)^2
 
   # Predict on the validation data
   validationPrediction <- predict(model, newdata = validation_data)
@@ -151,6 +165,8 @@ calculate_error_metrics <- function(model){
   cat("Out-of-sample MAE:", validationMAE, "\n")
   cat("Out-of-sample RMSE:", validationRMSE, "\n")
   cat("Out-of-sample R-squared:", validationRSQUARED, "\n")
+
+  return(list(trainingPrediction, validationPrediction, trainRMSE, validationRMSE))
 }
 
 # simple linear model with no transformations
@@ -160,7 +176,9 @@ linear_model <- function(){
   print(summary(simpleLM))
 
   print("Linear Model Performance - Error Metrics:")
-  calculate_error_metrics(simpleLM)
+  result <- calculate_error_metrics(simpleLM)
+
+  return(list(simpleLM, result[[1]], result[[2]], result[[3]], result[[4]]))
 }
 
 # bivariate model with polynomial/quadratic transformation
@@ -169,12 +187,14 @@ bivariate_model <- function() {
   print(summary(bivarModel))
 
   print("Bivariate Model Performance - Error Metrics:")
-  calculate_error_metrics(bivarModel)
+  result <- calculate_error_metrics(bivarModel)
+
+  return(list(bivarModel, result[[1]], result[[2]], result[[3]], result[[4]]))
 }
 
 regularize_model <- function() {
 
-  # create quadratic features for required data
+  # creates quadratic features for required data
   training_data$numHomeTeamSquared <- training_data$numHome.Team^2
   validation_data$numHomeTeamSquared <- validation_data$numHome.Team^2
   write.csv(training_data, "training_data.csv", row.names = FALSE)
@@ -193,7 +213,12 @@ regularize_model <- function() {
 
   ridgeModel <- glmnet(xTrain, yTrain, alpha = 0, lambda = optimalLambda)
 
-  ridgeValidationPredictions <- predict(ridgeModel, newx = xValidation)
+  ridgeTrainingPredictions <- as.vector(predict(ridgeModel, newx = xTrain))
+  ridgeValidationPredictions <- as.vector(predict(ridgeModel, newx = xValidation))
+
+  ridgeTrainingMAE <- mean(abs(ridgeTrainingPredictions - yTrain))
+  ridgeTrainingRMSE <- sqrt(mean((ridgeTrainingPredictions - yTrain)^2))
+  ridgeTrainingRSQUARED <- cor(ridgeTrainingPredictions, yTrain)^2
 
   ridgeValidationMAE <- mean(abs(ridgeValidationPredictions - yValidation))
   ridgeValidationRMSE <- sqrt(mean((ridgeValidationPredictions - yValidation)^2))
@@ -201,9 +226,15 @@ regularize_model <- function() {
 
   cat("Regularize Model Performance - Error Metrics:\n")
   cat("Optimal Lambda:", optimalLambda, "\n")
+  cat("In-sample MAE:", ridgeTrainingMAE, "\n")
+  cat("In-sample RMSE:", ridgeTrainingRMSE, "\n")
+  cat("In-sample R-squared:", ridgeTrainingRSQUARED, "\n")
+  cat("\n")
   cat("Out-of-sample MAE:", ridgeValidationMAE, "\n")
   cat("Out-of-sample RMSE:", ridgeValidationRMSE, "\n")
   cat("Out-of-sample R-squared:", ridgeValidationRSQUARED, "\n")
+
+  return(list(ridgeModel, ridgeTrainingPredictions, ridgeValidationPredictions, ridgeTrainingRMSE, ridgeValidationRMSE))
 }
 
 spline_model <- function() {
@@ -212,14 +243,88 @@ spline_model <- function() {
 
   cat("\n")
   print("Spline Model Performance - Error Metrics:")
-  calculate_error_metrics(splineModel)
+  result <- calculate_error_metrics(splineModel)
+
+  return(list(splineModel, result[[1]], result[[2]], result[[3]], result[[4]]))
 }
 
-bivariate_plot <- function() {
+bivariate_plot <- function(linearTrainingPred, linearValidationPred,
+                           bivariateTrainingPred,bivariateValidationPred,
+                           ridgeTrainingPred, ridgeValidationPred,
+                           splineTrainingPred, splineValidationPred,
+                           training_actual, validation_actual) {
 
+  df1 <- data.frame(x = training_data$numHome.Team, y = training_data$attendance)
+  plot(df1$y~df1$x)
+  df6 <- data.frame(x = validation_data$numHome.Team, y = validation_data$attendance)
+  plot(df6$y~df6$x)
+
+  df2 <- data.frame(x = df1$x, y = linearTrainingPred)
+  df3 <- data.frame(x = df1$x, y = bivariateTrainingPred)
+  df4 <- data.frame(x = df1$x, y = ridgeTrainingPred)
+  df5 <- data.frame(x = df1$x, y = splineTrainingPred)
+  df7 <- data.frame(x = df6$x, y = linearValidationPred)
+  df8 <- data.frame(x = df6$x, y = bivariateValidationPred)
+  df9 <- data.frame(x = df6$x, y = ridgeValidationPred)
+  df10 <- data.frame(x = df6$x, y = splineValidationPred)
+
+  ggplot(df2, aes(x, y)) +
+    geom_line(aes(color = "Linear"), linewidth = 0.8, alpha = 0.9) +
+    geom_line(data = df3, aes(x, y, color = "Bivariate"), linewidth = 0.8, alpha = 0.9, linetype = "dashed") +
+    geom_line(data = df4, aes(x, y, color = "Ridge"), linewidth = 0.8, alpha = 0.9, linetype = "dashed") +
+    geom_line(data = df5, aes(x, y, color = "Spline"), linewidth = 0.8, alpha = 0.9, linetype = "dashed") +
+    geom_line(data = df7, aes(x, y, color = "Linear (Validation)"), linewidth = 0.8, alpha = 0.9, linetype = "dashed") +
+    geom_line(data = df8, aes(x, y, color = "Bivariate (Validation)"), linewidth = 0.8, alpha = 0.9, linetype = "dashed") +
+    geom_line(data = df9, aes(x, y, color = "Ridge (Validation)"), linewidth = 0.8, alpha = 0.9, linetype = "dashed") +
+    geom_line(data = df10, aes(x, y, color = "Spline (Validation)"), linewidth = 0.8, alpha = 0.9, linetype = "dashed") +
+    geom_point(data = df1, aes(x, y), color = "darkgray") +
+    geom_point(data = df6, aes(x, y), color = "black") +
+    labs(x = "Team Number", y = "Attendance", title = "Models Predictions vs. Actual [Training & Validation]") +
+    scale_color_manual(name = "Models",
+                       values = c("Linear" = "skyblue", "Bivariate" = "skyblue4", "Ridge" = "royalblue",
+                                  "Spline" = "slateblue", "Linear (Validation)" = "orange",
+                                  "Bivariate (Validation)" = "red", "Ridge (Validation)" = "red4",
+                                  "Spline (Validation)" = "sienna2"))
 }
 
-performance_table <- function() {
+performance_table <- function(linearTrainingRMSE, linearValidationRMSE,
+                              bivariateTrainingRMSE, bivariateValidationRMSE,
+                              ridgeTrainingRMSE,  ridgeValidationRMSE,
+                              splineTrainingRMSE, splineValidationRMSE,
+                              linearModel, bivariateModel, ridgeModel, splineModel) {
+  models <- c("Linear", "Bivariate", "Ridge", "Spline")
+  inSampleRMSE <- c(linearTrainingRMSE, bivariateTrainingRMSE, ridgeTrainingRMSE, splineTrainingRMSE)
+  outSampleRMSE <- c(linearValidationRMSE, bivariateValidationRMSE, ridgeValidationRMSE, splineValidationRMSE)
 
+  performanceTable <- data.frame(Model = models, InSampleRMSE = inSampleRMSE, OutSampleRMSE = outSampleRMSE)
+  performanceTable
+
+  lowestRMSE_index <- which.min(outSampleRMSE)
+  bestModel <- models[lowestRMSE_index]
+
+  return(bestModel)
 }
+
+final_model_uncontaminated <- function(final_model){
+  if (final_model == "Linear") {
+    model <- lm(attendance ~ numHome.Team, data = training_data)
+  } else if (final_model == "Bivariate") {
+    model <- lm(attendance ~ numHome.Team + I(numHome.Team^2), data = training_data)
+  } else if (final_model == "Ridge") {
+    xTrain <- as.matrix(training_data[, c("numHome.Team", "numHomeTeamSquared")])
+    yTrain <- training_data$attendance
+    ridgeCV <- cv.glmnet(xTrain, yTrain, alpha = 0)
+    optimalLambda <- ridgeCV$lambda.min
+    model <- glmnet(xTrain, yTrain, alpha = 0, lambda = optimalLambda)
+  } else if (final_model == "Spline") {
+    model <- gam(attendance ~ s(numHome.Team), family = gaussian(), data = training_data)
+  }
+  finalPredictions <- predict(model, newdata = testing_data)
+
+  finalRMSE <- sqrt(mean((finalPredictions - testing_data$attendance)^2))
+  cat("Best Performance -", final_model, "Model\n")
+  cat("Uncontaminated Out-sample RMSE:", finalRMSE)
+}
+
 #--------------- Classification Tasks Below ---------------
+
