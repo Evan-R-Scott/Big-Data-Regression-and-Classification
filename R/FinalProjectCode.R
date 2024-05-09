@@ -1,5 +1,6 @@
 # setup
 library(caret)
+library(lubridate)
 library(dplyr)
 library(glmnet)
 library(mgcv)
@@ -39,13 +40,14 @@ best_model <- performance_table(linearTrainingRMSE, linearValidationRMSE,
                   splineTrainingRMSE, splineValidationRMSE,
                   linearModel, bivariateModel, ridgeModel, splineModel)
 final_model_uncontaminated(best_model)
+linear_multivariate_model()
 
 #--------------------------------------------------
 
 # clean the dataset of any unnecessary columns and fix data types
 clean_data <- function() {
 
-  clean_df <- subset(orig_df, select= -c(date, clock, stadium, home_blocked, away_blocked, home_pass, away_pass,
+  clean_df <- subset(orig_df, select= -c(stadium, home_blocked, away_blocked, home_pass, away_pass,
                                          home_off, away_off, home_offside, away_offside,
                                          home_tackles, away_tackles, home_duels, away_duels,
                                          home_saves, away_saves, home_fouls, away_fouls, home_yellow,
@@ -95,6 +97,12 @@ clean_data <- function() {
   clean_df$numHome.Team <- ifelse(clean_df$Home.Team %in% names(team_position_map), team_position_map[clean_df$Home.Team], NA)
   clean_df$numAway.Team <- ifelse(clean_df$Away.Team %in% names(team_position_map), team_position_map[clean_df$Away.Team], NA)
 
+  # add columns for date(1 = Monday and 7 = Sunday) and time (Time from Midnight)
+  clean_df$date <- dmy(clean_df$date)
+  clean_df$DayOfWeek <- wday(clean_df$date, label = FALSE, week_start = 1)
+  clean_df$TimeNumeric <- hour(hm(clean_df$clock)) * 60 + minute(hm(clean_df$clock))
+
+  clean_df <- subset(clean_df, select= -c(date, clock))
   return (clean_df)
 }
 
@@ -133,7 +141,7 @@ partition_data <- function() {
 # correlation matrix to verify at least one moderate to strong relationship
 correlation_check <- function() {
 
-  correlation_matrix <- cor(clean_df[, c("attendance", "numAway.Team", "numHome.Team", "Goals.Home", "home_possessions", "home_shots")])
+  correlation_matrix <- cor(clean_df[, c("attendance", "numAway.Team", "numHome.Team", "Goals.Home", "home_possessions", "home_shots", "DayOfWeek", "TimeNumeric")])
 
   print(correlation_matrix)
 }
@@ -324,6 +332,15 @@ final_model_uncontaminated <- function(final_model){
   finalRMSE <- sqrt(mean((finalPredictions - testing_data$attendance)^2))
   cat("Best Performance -", final_model, "Model\n")
   cat("Uncontaminated Out-sample RMSE:", finalRMSE)
+}
+
+linear_multivariate_model <- function(){
+  #linearMV <- lm(attendance ~ numHome.Team + Goals.Home + home_possessions + home_shots, data = training_data)
+  linearMV <- lm(attendance ~ numHome.Team + DayOfWeek + TimeNumeric, data = training_data)
+  print(summary(linearMV))
+
+  print("Linear Multivariate Model Performance - Error Metrics:")
+  result <- calculate_error_metrics(linearMV)
 }
 
 #--------------- Classification Tasks Below ---------------
