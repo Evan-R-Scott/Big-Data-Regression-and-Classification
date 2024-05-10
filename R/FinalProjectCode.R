@@ -29,7 +29,7 @@ validation_data <- read.csv("validation_data.csv")
 correlation_check()
 linearResult <- linear_model(); linearModel <- linearResult[1]; linearTrainingPred <- unlist(linearResult[2]); linearValidationPred <- unlist(linearResult[3]); linearTrainingRMSE <- unlist(linearResult[4]); linearValidationRMSE <- unlist(linearResult[5])
 bivariateResult <- bivariate_model(); bivariateModel<- bivariateResult[1]; bivariateTrainingPred <- unlist(bivariateResult[2]); bivariateValidationPred <- unlist(bivariateResult[3]); bivariateTrainingRMSE <- unlist(bivariateResult[4]); bivariateValidationRMSE <- unlist(bivariateResult[5])
-ridgeResult <- regularize_model(); ridgeModel <- ridgeResult[1]; ridgeTrainingPred <- unlist(ridgeResult[2]); ridgeValidationPred <- unlist(ridgeResult[3]); ridgeTrainingRMSE <- unlist(ridgeResult[4]); ridgeValidationRMSE <- unlist(ridgeResult[5])
+ridgeResult <- regularizeBV_model(); ridgeModel <- ridgeResult[1]; ridgeTrainingPred <- unlist(ridgeResult[2]); ridgeValidationPred <- unlist(ridgeResult[3]); ridgeTrainingRMSE <- unlist(ridgeResult[4]); ridgeValidationRMSE <- unlist(ridgeResult[5])
 splineResult <- spline_model(); splineModel <- splineResult[1]; splineTrainingPred <- unlist(splineResult[2]); splineValidationPred <- unlist(splineResult[3]); splineTrainingRMSE <- unlist(splineResult[4]); splineValidationRMSE <- unlist(splineResult[5])
 bivariate_plot(linearTrainingPred, linearValidationPred, bivariateTrainingPred,
                bivariateValidationPred, ridgeTrainingPred, ridgeValidationPred,
@@ -41,6 +41,9 @@ best_model <- performance_table(linearTrainingRMSE, linearValidationRMSE,
                   linearModel, bivariateModel, ridgeModel, splineModel)
 final_model_uncontaminated(best_model)
 linear_multivariate_model()
+regularizeMV_model()
+nonlinearMVModel()
+
 
 #--------------------------------------------------
 
@@ -141,7 +144,7 @@ partition_data <- function() {
 # correlation matrix to verify at least one moderate to strong relationship
 correlation_check <- function() {
 
-  correlation_matrix <- cor(clean_df[, c("attendance", "numAway.Team", "numHome.Team", "Goals.Home", "home_possessions", "home_shots", "DayOfWeek", "TimeNumeric")])
+  correlation_matrix <- cor(clean_df[, c("attendance", "numAway.Team", "numHome.Team", "Goals.Home", "home_possessions", "home_shots", "DayOfWeek", "TimeNumeric", "home_chances", "away_chances")])
 
   print(correlation_matrix)
 }
@@ -200,7 +203,7 @@ bivariate_model <- function() {
   return(list(bivarModel, result[[1]], result[[2]], result[[3]], result[[4]]))
 }
 
-regularize_model <- function() {
+regularizeBV_model <- function() {
 
   # creates quadratic features for required data
   training_data$numHomeTeamSquared <- training_data$numHome.Team^2
@@ -341,6 +344,72 @@ linear_multivariate_model <- function(){
 
   print("Linear Multivariate Model Performance - Error Metrics:")
   result <- calculate_error_metrics(linearMV)
+}
+
+regularizeMV_model <- function() {
+  X_train <- model.matrix(attendance ~ numHome.Team + DayOfWeek + TimeNumeric, data = training_data)
+  y_train <- training_data$attendance
+  X_valid <- model.matrix(attendance ~ numHome.Team + DayOfWeek + TimeNumeric, data = validation_data)
+  y_valid <- validation_data$attendance
+
+  regMV <- cv.glmnet(X_train, y_train, alpha = 0)
+
+  optimalLambda <- regMV$lambda.min
+
+  ridgeMVModel <- glmnet(X_train, y_train, alpha = 0, lambda = optimalLambda)
+
+  regMVTrainingPredictions <- as.vector(predict(ridgeMVModel, newx = X_train))
+  regMVValidationPredictions <- as.vector(predict(ridgeMVModel, newx = X_valid))
+
+  regMVTrainingMAE <- mean(abs(regMVTrainingPredictions - y_train))
+  regMVTrainingRMSE <- sqrt(mean((regMVTrainingPredictions - y_train)^2))
+  regMVTrainingRSQUARED <- cor(regMVTrainingPredictions, y_train)^2
+
+  regMVValidationMAE <- mean(abs(regMVValidationPredictions - y_valid))
+  regMVValidationRMSE <- sqrt(mean((regMVValidationPredictions - y_valid)^2))
+  regMVValidationRSQUARED <- cor(regMVValidationPredictions, y_valid)^2
+
+  cat("Regularize Multivariate Model Performance - Error Metrics:\n")
+  cat("Optimal Lambda:", optimalLambda, "\n")
+  cat("In-sample MAE:", regMVTrainingMAE, "\n")
+  cat("In-sample RMSE:", regMVTrainingRMSE, "\n")
+  cat("In-sample R-squared:", regMVTrainingRSQUARED, "\n")
+  cat("\n")
+  cat("Out-of-sample MAE:", regMVValidationMAE, "\n")
+  cat("Out-of-sample RMSE:", regMVValidationRMSE, "\n")
+  cat("Out-of-sample R-squared:", regMVValidationRSQUARED, "\n")
+}
+
+nonlinearMVModel <- function() {
+  polyTrain <- poly(training_data[, c("numHome.Team", "DayOfWeek", "TimeNumeric")], 2)
+  polyValid <- poly(validation_data[, c("numHome.Team", "DayOfWeek", "TimeNumeric")], 2)
+  trainActual <- training_data$attendance
+  validationActual <- validation_data$attendance
+
+  nonlinearMVModel <- lm(attendance ~ polyTrain, data = training_data)
+
+  print(summary(nonlinearMVModel))
+
+  nonlinearTrainingPredictions <- predict(nonlinearMVModel, newdata = as.data.frame(polyTrain))
+  nonlinearValidationPredictions <- predict(nonlinearMVModel, newdata = as.data.frame(polyValid))
+
+  nonlinearTrainingMAE <- mean(abs(nonlinearTrainingPredictions - trainActual))
+  nonlinearTrainingRMSE <- sqrt(mean((nonlinearTrainingPredictions - trainActual)^2))
+  nonlinearTrainingRSQUARED <- cor(nonlinearTrainingPredictions, trainActual)^2
+
+  nonlinearValidationMAE <- mean(abs(nonlinearValidationPredictions - validationActual))
+  nonlinearValidationRMSE <- sqrt(mean((nonlinearValidationPredictions - validationActual)^2))
+  nonlinearValidationRSQUARED <- cor(nonlinearValidationPredictions, validationActual)^2
+
+  cat("Nonlinear Multivariate Model Performance - Error Metrics:\n")
+  cat("In-sample MAE:", nonlinearTrainingMAE, "\n")
+  cat("In-sample RMSE:", nonlinearTrainingRMSE, "\n")
+  cat("In-sample R-squared:", nonlinearTrainingRSQUARED, "\n")
+  cat("\n")
+  cat("Out-of-sample MAE:", nonlinearValidationMAE, "\n")
+  cat("Out-of-sample RMSE:", nonlinearValidationRMSE, "\n")
+  cat("Out-of-sample R-squared:", nonlinearValidationRSQUARED, "\n")
+
 }
 
 #--------------- Classification Tasks Below ---------------
